@@ -199,10 +199,12 @@ class utils {
      * @return void
      */
     public static function generate_stats($timestart, $timeend) {
-        if ($timeend - $timestart > WEEKSECS) {
-            // Break it down into bite sized weeks.
-            while ($timeend - $timestart > WEEKSECS) {
-                $timechunkend = $timestart + WEEKSECS;
+        $max = 3 * HOURSECS;
+
+        if ($timeend - $timestart > $max) {
+            // Break it down into bite sized days.
+            while ($timeend - $timestart > $max) {
+                $timechunkend = $timestart + $max;
                 self::generate_stats($timestart, $timechunkend);
                 $timestart = $timechunkend;
             }
