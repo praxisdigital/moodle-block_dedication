@@ -239,7 +239,6 @@ class utils {
         }
         $records->close();
 
-        $records = [];
         foreach ($courses as $courseid => $users) {
             $course = $DB->get_record('course', ['id' => $courseid]);
             if (empty($course)) {
@@ -249,22 +248,34 @@ class utils {
             $logs = new manager($course, $timestart, $timeend);
             foreach ($users as $user) {
                 $events = $logs->get_user_dedication($user);
+
+                $records = [];
                 foreach ($events as $event) {
                     $data = new \stdClass();
                     if ($event->dedicationtime == 0) {
                         continue;
-                    } else {
-                        $data->userid = $user;
-                        $data->timespent = $event->dedicationtime;
-                        $data->courseid = $course->id;
-                        $data->timestart = $event->start_date;
                     }
+
+                    $data->userid = $user;
+                    $data->timespent = $event->dedicationtime;
+                    $data->courseid = $course->id;
+                    $data->timestart = $event->start_date;
                     $records[] = $data;
+
+                    if (count($records) >= 100) {
+                        // Insert records in at most batches of 100 to avoid memory issues.
+                        $DB->insert_records('block_dedication', $records);
+                        $records = [];
+                    }
                 }
+
+                if (empty($records)) {
+                    continue;
+                }
+
+                // Insert any remaining records.
+                $DB->insert_records('block_dedication', $records);
             }
-        }
-        if (!empty($records)) {
-            $DB->insert_records('block_dedication', $records);
         }
 
         // Update lastcalculated entry to prevent re-processing of older timeframes.
