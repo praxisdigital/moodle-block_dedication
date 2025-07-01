@@ -231,52 +231,67 @@ class utils {
                  WHERE timecreated >= :timestart AND timecreated < :timeend AND userid > 0 AND courseid > 0";
         $records = $DB->get_recordset_sql($sql, ['timestart' => $timestart, 'timeend' => $timeend]);
         $courses = [];
-        foreach ($records as $record) {
+
+        // Populate courses array with courseid as key and value as array of userids.
+        // Insert records & clear the courses array every 100 userids to avoid memory issues.
+        $batch = 1;
+        for ($i = 1; $records->valid(); $i++) {
+            mtrace("Processing batch $batch, record $i/100");
+            $record = $records->current();
+
             if (!isset($courses[$record->courseid])) {
                 $courses[$record->courseid] = [];
             }
             $courses[$record->courseid][] = $record->userid;
+
+            $records->next();
+
+            // If we have 100 users, or we've reached the end, insert records and clear the array.
+            if ($i >= 100 || $records->valid() === false) {
+                foreach ($courses as $courseid => $users) {
+                    $course = $DB->get_record('course', ['id' => $courseid]);
+                    if (empty($course)) {
+                        mtrace("Course $courseid not found, it may have been deleted.");
+                        continue;
+                    }
+                    $logs = new manager($course, $timestart, $timeend);
+                    foreach ($users as $user) {
+                        $events = $logs->get_user_dedication($user);
+
+                        $records_to_insert = [];
+                        foreach ($events as $event) {
+                            $data = new \stdClass();
+                            if ($event->dedicationtime == 0) {
+                                continue;
+                            }
+
+                            $data->userid = $user;
+                            $data->timespent = $event->dedicationtime;
+                            $data->courseid = $course->id;
+                            $data->timestart = $event->start_date;
+                            $records_to_insert[] = $data;
+
+                            if (count($records_to_insert) >= 100) {
+                                // Insert records in at most batches of 100 to avoid memory issues.
+                                $DB->insert_records('block_dedication', $records_to_insert);
+                                $records_to_insert = [];
+                            }
+                        }
+
+                        if (empty($records_to_insert)) {
+                            continue;
+                        }
+
+                        // Insert any remaining records.
+                        $DB->insert_records('block_dedication', $records_to_insert);
+                    }
+                }
+
+                $courses = []; // Clear the courses array.
+            }
         }
         $records->close();
 
-        foreach ($courses as $courseid => $users) {
-            $course = $DB->get_record('course', ['id' => $courseid]);
-            if (empty($course)) {
-                mtrace("Course $courseid not found, it may have been deleted.");
-                continue;
-            }
-            $logs = new manager($course, $timestart, $timeend);
-            foreach ($users as $user) {
-                $events = $logs->get_user_dedication($user);
-
-                $records = [];
-                foreach ($events as $event) {
-                    $data = new \stdClass();
-                    if ($event->dedicationtime == 0) {
-                        continue;
-                    }
-
-                    $data->userid = $user;
-                    $data->timespent = $event->dedicationtime;
-                    $data->courseid = $course->id;
-                    $data->timestart = $event->start_date;
-                    $records[] = $data;
-
-                    if (count($records) >= 100) {
-                        // Insert records in at most batches of 100 to avoid memory issues.
-                        $DB->insert_records('block_dedication', $records);
-                        $records = [];
-                    }
-                }
-
-                if (empty($records)) {
-                    continue;
-                }
-
-                // Insert any remaining records.
-                $DB->insert_records('block_dedication', $records);
-            }
-        }
 
         // Update lastcalculated entry to prevent re-processing of older timeframes.
         if (get_config('block_dedication', 'lastcalculated') < $timeend) {
