@@ -199,7 +199,7 @@ class utils {
      * @return void
      */
     public static function generate_stats($timestart, $timeend) {
-        $max = 3 * HOURSECS;
+        $max = (int)floor(0.25 * HOURSECS);
 
         if ($timeend - $timestart > $max) {
             // Break it down into bite sized days.
