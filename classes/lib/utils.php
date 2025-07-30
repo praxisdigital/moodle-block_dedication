@@ -288,6 +288,8 @@ class utils {
                 }
 
                 $courses = []; // Clear the courses array.
+                $i = 1; // Reset the counter.
+                $batch++; // Increment the batch counter.
             }
         }
         $records->close();
